@@ -22,11 +22,6 @@ OD808AudioProcessor::OD808AudioProcessor()
                        )
 #endif
 {
-	addParameter(distortion = new juce::AudioParameterFloat("Distortion", 
-															"Distortion",
-															0.0f,
-															1.0f,
-															0.5f));
 }
 
 OD808AudioProcessor::~OD808AudioProcessor()
@@ -98,8 +93,17 @@ void OD808AudioProcessor::changeProgramName (int index, const juce::String& newN
 //==============================================================================
 void OD808AudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-	fs = sampleRate;
-	h = 1 / fs;
+	juce::dsp::ProcessSpec specs;
+	specs.sampleRate = sampleRate;
+	specs.maximumBlockSize = samplesPerBlock;
+	specs.numChannels = 2;
+	
+	processorChain.prepare(specs);
+
+	//processorChain.get<upSamplingId>.
+	processorChain.get<balanceId>().setGainLinear(0.5f);
+	processorChain.get<driveId>().setDistortion(0.5f);
+	
 }
 
 void OD808AudioProcessor::releaseResources()
@@ -134,39 +138,27 @@ bool OD808AudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) co
 }
 #endif
 
+
 void OD808AudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
+	juce::dsp::AudioBlock<float> io(buffer);
+	juce::dsp::ProcessContextReplacing<float> context(io);
+	
+	processorChain.process(context);
 
+	auto out = context.getOutputBlock();
+	float avg = 0.0f;
+	auto numSamples = out.getNumChannels();
 
-        auto* outL = buffer.getWritePointer(0);
-		auto* outR = buffer.getWritePointer(1);
-		auto* in = buffer.getReadPointer(0);
+	for (int i = 0; i < numSamples; ++i) {
+		avg += abs(out.getSample(0, i));
+	}
 
-		// make chopped stream working with algorithm
-		// I(i + 1) = I(i) + h * dIdt(I(i), Vin(i + 1), Vin(i), h);
-		// V(i + 1) = V(i) + h * dVdt(V(i), I(i), D);
-		// Vout = V + Vin;*-
-		// store data from previous call, and for next
+	avg_out_val = avg / numSamples;
 
-		for (int i = 0; i < buffer.getNumSamples(); i++) {
-			float ibuff = in[i];
-
-			outL[i] = Vn + ibuff;
-			outR[i] = Vn + ibuff;
-
-			Inn = In + h * dIdt(In, ibuff, last_in, h);
-			Vnn = Vn + h * dVdt(Vn, Inn, *distortion);
-			Vn = Vnn;
-			In = Inn;
-			last_in = ibuff;
-		}
-    }
+}
 
 //==============================================================================
 bool OD808AudioProcessor::hasEditor() const
