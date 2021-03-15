@@ -25,4 +25,4 @@ Yellba overdrive is a vst plugin inspirated by OD808 electronic circuit implemen
 <!---
 References
 -->
-[main]: ui/render/h.png
+[main]: https://github.com/luke-komor/YellbaOverdrive/blob/main/UI/render/h.png
