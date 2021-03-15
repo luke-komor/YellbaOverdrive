@@ -10,9 +10,15 @@
 #include "PluginEditor.h"
 
 //==============================================================================
-OD808AudioProcessor::OD808AudioProcessor()
+OD808AudioProcessor::OD808AudioProcessor() 
+	: parameters(*this, nullptr, juce::Identifier("Parameters"), {
+			std::make_unique<juce::AudioParameterFloat> ("gain", "Gain", 0.0f, 1.0f, 0.5f),
+			std::make_unique<juce::AudioParameterFloat> ("drive", "Drive", 0.0f, 1.0f, 0.5f),
+			std::make_unique<juce::AudioParameterFloat> ("tone", "Tone", 0.0f, 1.0f, 0.5f),
+			std::make_unique<juce::AudioParameterBool> ("bypass", "Bypass_OD808", false),
+		})
 #ifndef JucePlugin_PreferredChannelConfigurations
-     : AudioProcessor (BusesProperties()
+     , AudioProcessor (BusesProperties()
                      #if ! JucePlugin_IsMidiEffect
                       #if ! JucePlugin_IsSynth
                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
@@ -22,6 +28,10 @@ OD808AudioProcessor::OD808AudioProcessor()
                        )
 #endif
 {
+
+	distortion = parameters.getRawParameterValue("drive");
+	tone = parameters.getRawParameterValue("tone");
+	gain = parameters.getRawParameterValue("gain");
 }
 
 OD808AudioProcessor::~OD808AudioProcessor()
@@ -68,8 +78,7 @@ double OD808AudioProcessor::getTailLengthSeconds() const
 
 int OD808AudioProcessor::getNumPrograms()
 {
-    return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
-                // so this should be at least 1, even if you're not really implementing programs.
+    return 1;  
 }
 
 int OD808AudioProcessor::getCurrentProgram()
@@ -79,15 +88,19 @@ int OD808AudioProcessor::getCurrentProgram()
 
 void OD808AudioProcessor::setCurrentProgram (int index)
 {
+	index;
 }
 
 const juce::String OD808AudioProcessor::getProgramName (int index)
 {
+	index;
     return {};
 }
 
 void OD808AudioProcessor::changeProgramName (int index, const juce::String& newName)
 {
+	index;
+	newName;
 }
 
 //==============================================================================
@@ -100,16 +113,16 @@ void OD808AudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 	
 	processorChain.prepare(specs);
 
-	//processorChain.get<upSamplingId>.
-	processorChain.get<balanceId>().setGainLinear(0.5f);
-	processorChain.get<driveId>().setDistortion(0.5f);
-	
+	processorChain.get<toneId>().setTone(parameters.getParameterAsValue("tone").getValue());
+	processorChain.get<outBufferId>().setGain(parameters.getParameterAsValue("gain").getValue());
+	processorChain.get<driveId>().setDistortion(parameters.getParameterAsValue("drive").getValue());
+
+	processorChain.get<trimGainId>().setGainDecibels(-3.0);
 }
 
 void OD808AudioProcessor::releaseResources()
 {
-    // When playback stops, you can use this as an opportunity to free up any
-    // spare memory, etc.
+
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -119,10 +132,6 @@ bool OD808AudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) co
     juce::ignoreUnused (layouts);
     return true;
   #else
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
-    // Some plugin hosts, such as certain GarageBand versions, will only
-    // load plugins that support stereo bus layouts.
     if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
 		&& layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
@@ -168,18 +177,25 @@ bool OD808AudioProcessor::hasEditor() const
 
 juce::AudioProcessorEditor* OD808AudioProcessor::createEditor()
 {
-    return new OD808AudioProcessorEditor (*this);
+    return new OD808AudioProcessorEditor (*this, parameters);
 }
 
 //==============================================================================
 void OD808AudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-	//juce::MemoryOutputStream(destData, true).writeFloat(*distortion);
+	auto state = parameters.copyState();
+	std::unique_ptr<juce::XmlElement> xml(state.createXml());
+	copyXmlToBinary(*xml, destData);
 }
 
 void OD808AudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-//*distortion = juce::MemoryInputStream(data, static_cast<size_t> (sizeInBytes), false).readFloat();
+
+	std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
+
+	if (xmlState.get() != nullptr)
+		if (xmlState->hasTagName(parameters.state.getType()))
+			parameters.replaceState(juce::ValueTree::fromXml(*xmlState));
 }
 
 //==============================================================================
